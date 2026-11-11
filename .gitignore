@@ -36,3 +36,6 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+# Fichiers de sauvegarde de partie
+sauvegarde_jeudedame.json

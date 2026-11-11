@@ -1,344 +1,552 @@
 package fr.iutrodez.jeudedame.controleur;
 
+import fr.iutrodez.jeudedame.modele.Coup;
+import fr.iutrodez.jeudedame.modele.GestionnaireSauvegarde;
 import fr.iutrodez.jeudedame.modele.Partie;
 import fr.iutrodez.jeudedame.modele.Pion;
-import javafx.application.Platform;
+import fr.iutrodez.jeudedame.modele.Plateau;
+import fr.iutrodez.jeudedame.modele.RobotIA;
+import fr.iutrodez.jeudedame.vue.PionGraphique;
+import javafx.animation.Animation;
+import javafx.animation.KeyFrame;
+import javafx.animation.PauseTransition;
+import javafx.animation.Timeline;
 import javafx.fxml.FXML;
-import javafx.geometry.HPos;
-import javafx.geometry.VPos;
+import javafx.fxml.FXMLLoader;
+import javafx.geometry.Pos;
 import javafx.scene.Node;
+import javafx.scene.Scene;
+import javafx.scene.control.Alert;
+import javafx.scene.control.Button;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.Label;
-import javafx.scene.image.ImageView;
-import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.GridPane;
-import javafx.scene.layout.Pane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.StackPane;
+import javafx.scene.shape.Circle;
+import javafx.stage.Stage;
+import javafx.util.Duration;
 
-import java.util.ArrayList;
+import java.io.IOException;
+import java.net.URL;
 import java.util.List;
-import java.util.Timer;
-import java.util.TimerTask;
+import java.util.Optional;
 
-import static java.lang.System.out;
-
+/**
+ * Contrôleur principal de l'écran de jeu (damier 10x10 et tableau de bord).
+ * Fait le lien entre les interactions utilisateur sur la vue JavaFX,
+ * le modèle Partie, le moteur RobotIA et le service GestionnaireSauvegarde.
+ *
+ * @author MUNIER-GÉNIE Valentin
+ * @version 2.0
+ */
 public class Controleur {
-    @FXML public GridPane gameGrid;
-    @FXML private List<Pion> captureReadyPions = new ArrayList<>();
-    @FXML private Label nombreDePionNoir;
-    @FXML private Label nombreDePionBlanc;
-    @FXML private Label playerTurnLabel;
-    @FXML private Label chronometre;
-    private Timer timer;
-    private long startTime;
-    private Partie partie;
-    private ImageView selectedPionImageView;
-    private Pion selectedPion;
 
+    /** Grille JavaFX représentant le damier. */
+    @FXML public GridPane gameGrid;
+
+    /** Label affichant le nombre de pions noirs restants. */
+    @FXML private Label nombreDePionNoir;
+
+    /** Label affichant le nombre de pions blancs restants. */
+    @FXML private Label nombreDePionBlanc;
+
+    /** Label indiquant le joueur actif. */
+    @FXML private Label playerTurnLabel;
+
+    /** Label du chronomètre numérique. */
+    @FXML private Label chronometre;
+
+    /** Label du bandeau de guidage contextuel. */
+    @FXML private Label statutLabel;
+
+    /** Label du mode de jeu actif. */
+    @FXML private Label modeLabel;
+
+    /** Label du nom du joueur Blanc. */
+    @FXML private Label nomJoueurBlancLabel;
+
+    /** Label du nom du joueur Noir. */
+    @FXML private Label nomJoueurNoirLabel;
+
+    /** Conteneur stylisé du badge de tour. */
+    @FXML private HBox turnBadge;
+
+    /** Carte de score du joueur Blanc. */
+    @FXML private HBox cardBlanc;
+
+    /** Carte de score du joueur Noir. */
+    @FXML private HBox cardNoir;
+
+    /** Emplacement de l'avatar vectoriel Blanc. */
+    @FXML private StackPane avatarBlancContainer;
+
+    /** Emplacement de l'avatar vectoriel Noir. */
+    @FXML private StackPane avatarNoirContainer;
+
+    /** Bouton de sauvegarde de la partie en cours. */
+    @FXML private Button btnSauvegarder;
+
+    /** Bouton de réinitialisation de la partie. */
+    @FXML private Button btnRecommencer;
+
+    /** Bouton d'affichage des règles officielles. */
+    @FXML private Button boutonAmpoule;
+
+    /** Bouton de retour au menu principal. */
+    @FXML private Button btnAccueil;
+
+    /** Instance de la partie en cours. */
+    private Partie partie;
+
+    /** Tableau bidimensionnel des cellules graphiques [y][x]. */
+    private final StackPane[][] cells = new StackPane[Plateau.TAILLE][Plateau.TAILLE];
+
+    /** Chronomètre JavaFX cadencé à la seconde. */
+    private Timeline timeline;
+
+    /** Temps écoulé en secondes depuis le début de la partie. */
+    private long secondesEcoulees = 0;
+
+    /** Indique si le mode Robot (IA) est activé. */
+    private boolean vsRobot = false;
+
+    /** Instance du moteur d'IA pour les pièces noires. */
+    private final RobotIA robot = new RobotIA(Pion.COULEUR_NOIR);
+
+    /** Verrou empêchant l'interaction humaine pendant la réflexion du robot. */
+    private boolean robotEnTrainDeJouer = false;
+
+    /**
+     * Initialisation automatique après chargement du FXML.
+     */
     @FXML
     public void initialize() {
-        out.println("Initialisation du contrôleur...");
-        partie = new Partie();
-        setupChronometer();
-        drawInitialBoard();
-    }
-
-    public void setupChronometer() {
-        if (timer != null) {
-            timer.cancel();
+        if (partie == null) {
+            partie = new Partie();
         }
-        timer = new Timer();
-        startTime = System.currentTimeMillis();
-        timer.scheduleAtFixedRate(new TimerTask() {
-            @Override
-            public void run() {
-                Platform.runLater(() -> updateChronometer());
-            }
-        }, 0, 1000);
+        initialiserBoutons();
+        initialiserAvatars();
+        initialiserPlateauVisuel();
+        demarrerChronometre();
+        rafraichirAffichage();
     }
 
-    private void updateChronometer() {
-        long now = System.currentTimeMillis();
-        long elapsedMillis = now - startTime;
-        int seconds = (int) (elapsedMillis / 1000) % 60;
-        int minutes = (int) ((elapsedMillis / (1000 * 60)) % 60);
-        int hours = (int) ((elapsedMillis / (1000 * 60 * 60)) % 24);
-        chronometre.setText(String.format("%02d : %02d : %02d", hours, minutes, seconds));
+    /**
+     * Active ou désactive le mode de jeu contre le Robot.
+     *
+     * @param vsRobot true pour jouer contre l'IA, false pour 2 joueurs
+     */
+    public void setVsRobot(boolean vsRobot) {
+        this.vsRobot = vsRobot;
+        if (modeLabel != null) {
+            modeLabel.setText(vsRobot ? "Mode : Joueur vs Robot" : "Mode : 2 Joueurs (Local)");
+        }
+        if (nomJoueurNoirLabel != null) {
+            nomJoueurNoirLabel.setText(vsRobot ? "Robot" : "Joueur Noir");
+        }
     }
 
-    private void drawInitialBoard() {
-        out.println("Dessiner le plateau initial...");
+    /**
+     * Restaure le temps de départ pour les parties chargées.
+     *
+     * @param temps secondes écoulées
+     */
+    public void setTempsSecondes(long temps) {
+        this.secondesEcoulees = Math.max(0, temps);
+        mettreAJourChronometre();
+    }
+
+    /**
+     * Définit une nouvelle partie et rafraîchit l'ensemble des composants.
+     *
+     * @param nouvellePartie la partie à associer
+     */
+    public void setPartie(Partie nouvellePartie) {
+        this.partie = nouvellePartie;
+        if (gameGrid != null) {
+            initialiserPlateauVisuel();
+            demarrerChronometre();
+            rafraichirAffichage();
+            verifierTourRobot();
+        }
+    }
+
+    private void initialiserBoutons() {
+        if (btnSauvegarder != null) {
+            btnSauvegarder.setOnAction(event -> sauvegarderPartie());
+        }
+        if (boutonAmpoule != null) {
+            boutonAmpoule.setOnAction(event -> afficherAideRegles());
+        }
+        if (btnRecommencer != null) {
+            btnRecommencer.setOnAction(event -> recommencerPartie());
+        }
+        if (btnAccueil != null) {
+            btnAccueil.setOnAction(event -> retournerAccueil());
+        }
+    }
+
+    private void initialiserAvatars() {
+        if (avatarBlancContainer != null) {
+            avatarBlancContainer.getChildren().clear();
+            avatarBlancContainer.getChildren().add(PionGraphique.creer(new Pion(false, 0, 0, Pion.COULEUR_BLANC)));
+        }
+        if (avatarNoirContainer != null) {
+            avatarNoirContainer.getChildren().clear();
+            avatarNoirContainer.getChildren().add(PionGraphique.creer(new Pion(false, 0, 0, Pion.COULEUR_NOIR)));
+        }
+    }
+
+    private void sauvegarderPartie() {
+        boolean succes = GestionnaireSauvegarde.sauvegarder(partie, secondesEcoulees, vsRobot);
+        if (statutLabel != null) {
+            statutLabel.setText(succes ? "✔ Partie sauvegardée avec succès !" : "❌ Erreur de sauvegarde.");
+        }
+    }
+
+    private void demarrerChronometre() {
+        if (timeline != null) {
+            timeline.stop();
+        }
+        mettreAJourChronometre();
+
+        timeline = new Timeline(new KeyFrame(Duration.seconds(1), event -> {
+            secondesEcoulees++;
+            mettreAJourChronometre();
+        }));
+        timeline.setCycleCount(Animation.INDEFINITE);
+        timeline.play();
+    }
+
+    private void mettreAJourChronometre() {
+        if (chronometre == null) return;
+        long h = secondesEcoulees / 3600;
+        long m = (secondesEcoulees % 3600) / 60;
+        long s = secondesEcoulees % 60;
+        chronometre.setText(String.format("%02d : %02d : %02d", h, m, s));
+    }
+
+    /**
+     * Stoppe le chronomètre pour libérer les ressources.
+     */
+    public void arreterChronometre() {
+        if (timeline != null) {
+            timeline.stop();
+        }
+    }
+
+    private void initialiserPlateauVisuel() {
         gameGrid.getChildren().clear();
 
-        for (int y = 0; y < 10; y++) {
-            for (int x = 0; x < 10; x++) {
-                Pane cell = new Pane();
-                cell.setOnMouseClicked(this::onCaseClicked);
-                GridPane.setConstraints(cell, x, y);
-                GridPane.setRowIndex(cell, y);
-                GridPane.setColumnIndex(cell, x);
-                gameGrid.getChildren().add(cell);
+        for (int y = 0; y < Plateau.TAILLE; y++) {
+            for (int x = 0; x < Plateau.TAILLE; x++) {
+                StackPane cell = new StackPane();
+                cell.setAlignment(Pos.CENTER);
+                cell.setPrefSize(60, 60);
+                cell.setMinSize(60, 60);
+                cell.setMaxSize(60, 60);
+
+                if ((x + y) % 2 == 0) {
+                    cell.getStyleClass().add("board-cell-light");
+                } else {
+                    cell.getStyleClass().add("board-cell-dark");
+                }
+
+                final int col = x;
+                final int row = y;
+                cell.setOnMouseClicked(event -> gererClicCase(col, row));
+
+                cells[y][x] = cell;
+                gameGrid.add(cell, col, row);
             }
         }
-
-        for (Pion pion : partie.getJoueurNoir().getPions()) {
-            placePionInView(pion, pion.getPosX(), pion.getPosY());
-        }
-        for (Pion pion : partie.getJoueurBlanc().getPions()) {
-            placePionInView(pion, pion.getPosX(), pion.getPosY());
-        }
-        out.println("Plateau initial dessiné.");
     }
 
-    private void placePionInView(Pion pion, int x, int y) {
-        ImageView imageView = new ImageView(pion.getImage());
-        imageView.setFitWidth(50);
-        imageView.setFitHeight(50);
-        imageView.setSmooth(true);
-        imageView.setOnMouseClicked(this::onPionClicked);
-        GridPane.setConstraints(imageView, x, y);
-        GridPane.setHalignment(imageView, HPos.CENTER);
-        GridPane.setValignment(imageView, VPos.CENTER);
-        gameGrid.add(imageView, x, y);
-    }
+    private void gererClicCase(int x, int y) {
+        if (partie.isPartieTerminee() || robotEnTrainDeJouer) {
+            return;
+        }
 
-    @FXML
-    private void onCaseClicked(MouseEvent event) {
-        try {
-            Node source = (Node) event.getSource();
-            Integer x = GridPane.getColumnIndex(source);
-            Integer y = GridPane.getRowIndex(source);
+        // Si c'est au tour du robot, l'humain est bloqué
+        if (vsRobot && partie.getJoueurActuel().getColor().equalsIgnoreCase(Pion.COULEUR_NOIR)) {
+            return;
+        }
 
-            if (x == null || y == null) {
-                return;
-            }
+        Pion pionSelectionne = partie.getPionSelectionne();
 
-            out.println("Cas cliqué sur (" + x + ", " + y + ").");
+        // 1. Déplacement vers la case cliquée
+        if (pionSelectionne != null) {
+            List<Coup> coupsPossibles = (partie.getPionEnRafle() != null)
+                    ? partie.getPlateau().getCoupsDeCapture(pionSelectionne)
+                    : partie.getPlateau().getCoupsLegaux(pionSelectionne, partie.getJoueurActuel());
 
-            if (selectedPion != null && !captureReadyPions.isEmpty()) {
-                if (!captureReadyPions.contains(selectedPion)) {
-                    out.println("Le pion sélectionné ne peut pas capturer.");
-                    return;
+            boolean valide = false;
+            for (Coup coup : coupsPossibles) {
+                if (coup.getArriveeX() == x && coup.getArriveeY() == y) {
+                    valide = true;
+                    break;
                 }
             }
 
-            Pion pionOnCase = partie.getPionAt(x, y);
-            if (pionOnCase != null) {
-                out.println("Il y a déjà un pion sur cette case.");
+            if (valide) {
+                partie.deplacerPion(x, y);
+                rafraichirAffichage();
+
+                if (partie.isPartieTerminee()) {
+                    arreterChronometre();
+                    afficherVictoire();
+                } else {
+                    verifierTourRobot();
+                }
                 return;
             }
-
-            if (selectedPion != null) {
-                out.println("Tentative de déplacer le pion sélectionné...");
-                attemptMove(x, y);
-                removeAllHighlight();
-            }
-        } catch (Exception e) {
-            out.println("Cliquez sur la grille de traitement des erreurs : " + e.getMessage());
         }
-    }
 
-    private void onPionClicked(MouseEvent event) {
-        ImageView clickedImageView = (ImageView) event.getSource();
-        int x = GridPane.getColumnIndex(clickedImageView);
-        int y = GridPane.getRowIndex(clickedImageView);
-        Pion clickedPion = partie.getPionAt(x, y);
-
-        updateCaptureReadyPions();
-
-        if (clickedPion != null && clickedPion.getColor().equals(partie.getJoueurActuel().getColor())) {
-            if (!captureReadyPions.isEmpty() && !captureReadyPions.contains(clickedPion)) {
-                out.println("This pawn cannot move now. Please select a pawn that can capture.");
-            } else {
-                selectPion(clickedImageView, clickedPion);
-                highlightLegalMoves(clickedPion);
-            }
-        }
-    }
-
-    private void updateCaptureReadyPions() {
-        captureReadyPions.clear();
-        for (Pion pion : partie.getAllPions(partie.getJoueurActuel().getColor())) {
-            if (partie.canCapture(pion)) {
-                captureReadyPions.add(pion);
-            }
-        }
-        highlightPionsForCapture();
-        highlightMovesForAllCaptureReadyPions();
-    }
-
-    private void highlightMovesForAllCaptureReadyPions() {
-        for (Pion pion : captureReadyPions) {
-            highlightLegalMoves(pion);
-        }
-    }
-
-    private void selectPion(ImageView imageView, Pion pion) {
-        out.println("Sélection du pion à (" + pion.getPosX() + ", " + pion.getPosY() + ")...");
-        selectedPion = pion;
-        selectedPionImageView = imageView;
-        partie.selectionnerPion(pion.getPosX(), pion.getPosY());
-        selectedPionImageView.getStyleClass().add("highlighted-pion");
-        out.println("Pion sélectionné et mouvements possibles affichés.");
-    }
-
-    // TODO surligner les cases de destinations quand on mange vers l'arrière
-    // TODO afficher le surlignage quand on clique sur un pion
-    private void highlightLegalMoves(Pion pion) {
-        removeAllHighlight();
-        ImageView imageView = new ImageView(pion.getImage());
-        imageView.getStyleClass().add("highlighted-pion");
-        List<int[]> legalMoves = partie.getPlateau().getLegalMoves(pion);
-        System.out.println("Mouvement legal trouvé : " + legalMoves.size());
-        for (int[] move : legalMoves) {
-            int x = move[0];
-            int y = move[1];
-            System.out.println("Essayer de surligner le mouvement à: " + x + ", " + y);
-            Node node = findNodeByGridPosition(x, y);
-            if (node != null) {
-                boolean isCaptureMove = Math.abs(x - pion.getPosX()) == 2 && Math.abs(y - pion.getPosY()) == 2;
-                String cssClass = "highlight-move";
-                node.getStyleClass().add(cssClass);
-                System.out.println("Highlighted: " + cssClass);
-
-                if (isCaptureMove) {
-                    int midX = (pion.getPosX() + x) / 2;
-                    int midY = (pion.getPosY() + y) / 2;
-                    ImageView capturePionImageView = findPionImageViewAt(midX, midY);
-                    if (capturePionImageView != null) {
-                        capturePionImageView.getStyleClass().add("highlight-capture");
-                        out.println(capturePionImageView.getStyleClass().add("highlight-capture"));
-                        System.out.println("Highlighted capture à: [" + midX + ", " + midY + "]");
-                    } else {
-                        System.out.println("ImageView introuvable pour la capture à [" + midX + ", " + midY + "]");
+        // 2. Sélection d'une pièce
+        if (partie.getPionEnRafle() == null) {
+            Pion pionClique = partie.getPionAt(x, y);
+            if (pionClique != null && pionClique.getColor().equalsIgnoreCase(partie.getJoueurActuel().getColor())) {
+                boolean succes = partie.selectionnerPion(x, y);
+                if (!succes && !partie.getPionsAyantCaptures().isEmpty()) {
+                    if (statutLabel != null) {
+                        statutLabel.setText("⚠ Prise obligatoire ! Vous devez sélectionner un pion preneur");
                     }
                 }
+                rafraichirAffichage();
             } else {
-                System.out.println("Node introuvable sur [" + x + ", " + y + "]");
+                partie.deselectionner();
+                rafraichirAffichage();
             }
         }
     }
 
-    private void highlightPionsForCapture() {
-        for (Pion pion : captureReadyPions) {
-            ImageView pionView = findPionImageViewAt(pion.getPosX(), pion.getPosY());
-            if (pionView != null) {
-                pionView.getStyleClass().add("highlighted-pion");
-            } else {
-            System.out.println("ImageView introuvable pour le pion");
-        }
-        }
-    }
+    private void verifierTourRobot() {
+        if (!vsRobot || partie.isPartieTerminee()) return;
 
-    private ImageView findPionImageViewAt(int x, int y) {
-        for (Node node : gameGrid.getChildren()) {
-            if (node instanceof ImageView && GridPane.getColumnIndex(node) == x && GridPane.getRowIndex(node) == y) {
-                return (ImageView) node;
+        if (partie.getJoueurActuel().getColor().equalsIgnoreCase(Pion.COULEUR_NOIR)) {
+            robotEnTrainDeJouer = true;
+            if (statutLabel != null) {
+                statutLabel.setText("🤖 Le robot réfléchit...");
             }
+
+            PauseTransition pause = new PauseTransition(Duration.millis(550));
+            pause.setOnFinished(event -> jouerCoupRobot());
+            pause.play();
         }
-        return null;
     }
 
-    private Node findNodeByGridPosition(int x, int y) {
-        for (Node node : gameGrid.getChildren()) {
-            if (GridPane.getColumnIndex(node) != null && GridPane.getColumnIndex(node) == x &&
-                    GridPane.getRowIndex(node) != null && GridPane.getRowIndex(node) == y) {
-                return node;
+    private void jouerCoupRobot() {
+        if (partie.isPartieTerminee()) {
+            robotEnTrainDeJouer = false;
+            return;
+        }
+
+        RobotIA.ActionRobot action = robot.choisirCoup(partie);
+        if (action != null) {
+            partie.selectionnerPion(action.getPion().getPosX(), action.getPion().getPosY());
+            partie.deplacerPion(action.getCoup().getArriveeX(), action.getCoup().getArriveeY());
+            rafraichirAffichage();
+
+            if (partie.getPionEnRafle() != null) {
+                // Rafle enchaînée
+                if (statutLabel != null) {
+                    statutLabel.setText("⚡ Le robot enchaîne une prise !");
+                }
+                PauseTransition raflePause = new PauseTransition(Duration.millis(450));
+                raflePause.setOnFinished(e -> jouerCoupRobot());
+                raflePause.play();
+                return;
             }
-        }
-        return null;
-    }
 
-    private void attemptMove(int newX, int newY) {
-        int oldX = selectedPion.getPosX();
-        int oldY = selectedPion.getPosY();
+            robotEnTrainDeJouer = false;
+            rafraichirAffichage();
 
-        if (partie.deplacerPion(newX, newY)) {
-            movePion(selectedPionImageView, newX, newY);
-            updateCaseOnMove(oldX, oldY, newX, newY);
-            if (Math.abs(newX - oldX) == 2 && checkForAdditionalCaptures(newX, newY)) {
-                out.println("Additional captures possible, le joueur devrait continuer.");
-                selectPion(selectedPionImageView, selectedPion);
-                highlightLegalMoves(selectedPion);
-            } else {
-                changePlayerTurn();
+            if (partie.isPartieTerminee()) {
+                arreterChronometre();
+                afficherVictoire();
             }
         } else {
-            out.println("Tentative de déplacement invalide.");
-        }
-    }
-
-    private boolean checkForAdditionalCaptures(int x, int y) {
-        Pion pion = partie.getPlateau().getPion(x, y);
-        if (pion != null) {
-            List<int[]> captureMoves = partie.getPlateau().getLegalMoves(pion);
-            return captureMoves.stream().anyMatch(move -> Math.abs(move[0] - x) == 2);
-        }
-        return false;
-    }
-
-    private void updateCaseOnMove(int oldX, int oldY, int newX, int newY) {
-        partie.getPlateau().getCase(oldX, oldY).reset();
-        partie.getPlateau().getCase(newX, newY).setPion(selectedPion);
-
-        if (Math.abs(newX - oldX) == 2 && Math.abs(newY - oldY) == 2) {
-            int midX = (oldX + newX) / 2;
-            int midY = (oldY + newY) / 2;
-            Pion capturedPion = partie.getPionBetween(oldX, oldY, newX, newY);
-            if (capturedPion != null) {
-                partie.getPlateau().getCase(midX, midY).reset();
-                removePionFromView(capturedPion);
-                partie.capturerPion(capturedPion);
-                out.println("Pion capturé et retiré du plateau.");
+            robotEnTrainDeJouer = false;
+            partie.verifierFinDePartie();
+            if (partie.isPartieTerminee()) {
+                arreterChronometre();
+                afficherVictoire();
             }
         }
     }
 
-    private void changePlayerTurn() {
-        partie.changerJoueur();
-        String color = partie.getJoueurActuel().getColor();
-        nombreDePionNoir.setText("Pion restant : " + (long) partie.getJoueurNoir().getPions().size());
-        nombreDePionBlanc.setText("Pion restant : " + (long) partie.getJoueurBlanc().getPions().size());
-        playerTurnLabel.setText("Tour : " + color);
-        out.println("Tour changé à " + color + ".");
-        deselectPion();
-    }
+    /**
+     * Synchronise l'ensemble de la vue avec le modèle métier.
+     */
+    public void rafraichirAffichage() {
+        if (gameGrid == null || partie == null) return;
 
-    private void deselectPion() {
-        if (selectedPionImageView != null) {
-            selectedPionImageView.getStyleClass().remove("highlighted-pion");
-            selectedPionImageView = null;
-            selectedPion = null;
+        boolean isBlanc = partie.getJoueurActuel().getColor().equalsIgnoreCase(Pion.COULEUR_BLANC);
+
+        // 1. Mise à jour des scores et badges
+        if (playerTurnLabel != null) {
+            if (vsRobot && !isBlanc) {
+                playerTurnLabel.setText("Tour du Robot");
+            } else {
+                playerTurnLabel.setText(isBlanc ? "Tour des Blancs" : "Tour des Noirs");
+            }
         }
-        removeAllHighlight();
-    }
+        if (turnBadge != null) {
+            turnBadge.setStyle(isBlanc
+                    ? "-fx-background-color: linear-gradient(to right, #059669, #10b981);"
+                    : "-fx-background-color: linear-gradient(to right, #334155, #1e293b); -fx-border-color: #64748b; -fx-border-width: 1.5; -fx-border-radius: 10;");
+        }
+        if (cardBlanc != null) {
+            cardBlanc.getStyleClass().removeAll("player-score-card-active");
+            if (isBlanc) cardBlanc.getStyleClass().add("player-score-card-active");
+        }
+        if (cardNoir != null) {
+            cardNoir.getStyleClass().removeAll("player-score-card-active");
+            if (!isBlanc) cardNoir.getStyleClass().add("player-score-card-active");
+        }
+        if (nombreDePionBlanc != null) {
+            nombreDePionBlanc.setText(partie.getJoueurBlanc().getNombreDePions() + " pions restants");
+        }
+        if (nombreDePionNoir != null) {
+            nombreDePionNoir.setText(partie.getJoueurNoir().getNombreDePions() + " pions restants");
+        }
 
-    public void removePionFromView(Pion capturedPion) {
-        for (Node node : gameGrid.getChildren()) {
-            if (node instanceof ImageView && GridPane.getColumnIndex(node) == capturedPion.getPosX() && GridPane.getRowIndex(node) == capturedPion.getPosY()) {
-                gameGrid.getChildren().remove(node);
-                out.println("Pion ImageView retiré du GUI à (" + capturedPion.getPosX() + ", " + capturedPion.getPosY() + ")");
-                break;
+        // 2. Message de guidage
+        if (statutLabel != null && !robotEnTrainDeJouer) {
+            if (partie.getPionEnRafle() != null) {
+                statutLabel.setText("⚡ Rafle en cours ! Continuez vos prises");
+            } else if (!partie.getPionsAyantCaptures().isEmpty()) {
+                statutLabel.setText("⚠ Prise obligatoire ! Jouez un des pions en orange");
+            } else if (partie.getPionSelectionne() != null) {
+                statutLabel.setText("Pion sélectionné — Cliquez sur une case verte");
+            } else {
+                statutLabel.setText("Au tour des " + (isBlanc ? "Blancs" : (vsRobot ? "Noirs (Robot)" : "Noirs")) + " — Choisissez un pion");
+            }
+        }
+
+        List<Pion> pionsPreneurs = partie.getPionsAyantCaptures();
+        Pion pionSelectionne = partie.getPionSelectionne();
+
+        // 3. Dessiner les pièces vectorielles
+        for (int y = 0; y < Plateau.TAILLE; y++) {
+            for (int x = 0; x < Plateau.TAILLE; x++) {
+                StackPane cell = cells[y][x];
+                cell.getChildren().clear();
+                cell.getStyleClass().remove("board-cell-selected");
+
+                Pion pion = partie.getPionAt(x, y);
+                if (pion != null) {
+                    Node pionNode = PionGraphique.creer(pion);
+
+                    if (pion == pionSelectionne) {
+                        pionNode.getStyleClass().add("highlighted-pion");
+                        cell.getStyleClass().add("board-cell-selected");
+                    } else if (pionsPreneurs.contains(pion)) {
+                        pionNode.getStyleClass().add("pion-must-capture");
+                    }
+
+                    cell.getChildren().add(pionNode);
+                }
+            }
+        }
+
+        // 4. Pastilles indicatrices pour le pion sélectionné
+        if (pionSelectionne != null) {
+            List<Coup> coups = (partie.getPionEnRafle() != null)
+                    ? partie.getPlateau().getCoupsDeCapture(pionSelectionne)
+                    : partie.getPlateau().getCoupsLegaux(pionSelectionne, partie.getJoueurActuel());
+
+            for (Coup coup : coups) {
+                int ax = coup.getArriveeX();
+                int ay = coup.getArriveeY();
+
+                Circle indicator = new Circle(13);
+                if (coup.estCapture()) {
+                    indicator.getStyleClass().add("target-indicator-capture");
+
+                    // Surbrillance rouge de la pièce menacée
+                    Pion capturee = coup.getPionCapture();
+                    if (capturee != null) {
+                        StackPane caseCapturee = cells[capturee.getPosY()][capturee.getPosX()];
+                        for (Node node : caseCapturee.getChildren()) {
+                            if (!node.getStyleClass().contains("highlight-capture")) {
+                                node.getStyleClass().add("highlight-capture");
+                            }
+                        }
+                    }
+                } else {
+                    indicator.getStyleClass().add("target-indicator-move");
+                }
+
+                cells[ay][ax].getChildren().add(indicator);
             }
         }
     }
 
-    private void movePion(ImageView pion, int newX, int newY) {
-        out.println("Déplacement du pion en vue vers (" + newX + ", " + newY + ")...");
-        GridPane.setColumnIndex(pion, newX);
-        GridPane.setRowIndex(pion, newY);
-        out.println("Pion déplacé en vue.");
-    }
+    private void afficherVictoire() {
+        String gagnant = partie.getJoueurGagnant().getColor();
+        boolean robotGagne = vsRobot && Pion.COULEUR_NOIR.equalsIgnoreCase(gagnant);
 
-    public void setPartie(Partie partie) {
-        out.println("Définir une nouvelle partie...");
-        this.partie = partie;
-        drawInitialBoard();
-    }
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle("Fin de la partie !");
+        alert.setHeaderText(robotGagne ? "🤖 Le Robot remporte la partie !" : "🏆 Félicitations au Joueur " + gagnant + " !");
+        alert.setContentText((robotGagne ? "Le Robot a remporté la victoire !\n\n" : "Le Joueur " + gagnant + " remporte la partie !\n\n") +
+                "⏱ Durée de la partie : " + chronometre.getText() + "\n" +
+                "⚪ Pions Blancs restants : " + partie.getJoueurBlanc().getNombreDePions() + "\n" +
+                "⚫ Pions Noirs restants : " + partie.getJoueurNoir().getNombreDePions());
 
-    private void removeAllHighlight() {
-        for (Node node : gameGrid.getChildren()) {
-            node.getStyleClass().removeAll("highlighted-pion", "highlight-move", "highlight-capture", "highlight-capture-move", "highlighted-case");
-            node.setStyle("");
+        ButtonType btnRejouer = new ButtonType("Rejouer");
+        ButtonType btnAccueilMenu = new ButtonType("Menu Principal");
+        alert.getButtonTypes().setAll(btnRejouer, btnAccueilMenu);
+
+        Optional<ButtonType> result = alert.showAndWait();
+        if (result.isPresent()) {
+            if (result.get() == btnRejouer) {
+                recommencerPartie();
+            } else if (result.get() == btnAccueilMenu) {
+                retournerAccueil();
+            }
         }
     }
 
+    private void recommencerPartie() {
+        this.partie = new Partie();
+        this.secondesEcoulees = 0;
+        demarrerChronometre();
+        rafraichirAffichage();
+        verifierTourRobot();
+    }
+
+    private void afficherAideRegles() {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle("Règles du Jeu de Dames");
+        alert.setHeaderText("Jeu de Dames — Règles Officielles");
+        alert.setContentText(
+                "• Plateau : Damier officiel 10×10 avec 20 pions par joueur.\n\n" +
+                "• Premier coup : Les Blancs commencent la partie.\n\n" +
+                "• Déplacement simple : En diagonale d'une case vers l'avant.\n\n" +
+                "• Capture : Saute par-dessus une pièce adverse en diagonale vers l'avant OU vers l'arrière.\n\n" +
+                "• Prise obligatoire : Si une prise est possible, elle doit obligatoirement être jouée (pions en orange).\n\n" +
+                "• Rafle : Le joueur doit enchaîner toutes les captures consécutives possibles avec la même pièce.\n\n" +
+                "• Dame : Atteindre la ligne de fond adverse transforme le pion en Dame, qui peut voler sur toute la diagonale libre.\n\n" +
+                "• Sauvegarde : Cliquez sur 💾 Sauvegarder à tout moment pour reprendre plus tard depuis le menu principal."
+        );
+        alert.showAndWait();
+    }
+
+    private void retournerAccueil() {
+        arreterChronometre();
+        try {
+            Stage stage = (Stage) gameGrid.getScene().getWindow();
+            URL accueilUrl = getClass().getResource("/fr/iutrodez/jeudedame/vue/accueil/page-accueil.fxml");
+            FXMLLoader fxmlLoader = new FXMLLoader(accueilUrl);
+            Scene scene = new Scene(fxmlLoader.load());
+            stage.setScene(scene);
+            stage.setTitle("Jeu de Dames");
+            stage.show();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
 }
