@@ -107,13 +107,13 @@ Sous Windows (PowerShell / CMD) :
 
 Sous Linux / macOS :
 ```bash
-./mvnw clean javafx:run
+mvn clean javafx:run
 ```
 
 ### 2. Compiler le package JAR
 
 ```powershell
-.\mvnw.cmd clean package
+mvn clean package
 ```
 
 Le fichier exécutable est généré dans `target/JeuDeDame-1.0-SNAPSHOT.jar` et synchronisé dans `out/artifacts/JeuDeDame/JeuDeDame.jar`.
@@ -124,7 +124,7 @@ Le fichier exécutable est généré dans `target/JeuDeDame-1.0-SNAPSHOT.jar` et
 
 Une suite complète de **29 tests unitaires JUnit 5** valide l'ensemble des règles métier, le Robot et le système de sauvegarde :
 ```powershell
-.\mvnw.cmd test
+mvn test
 ```
 
 Tous les tests affichent `BUILD SUCCESS` (29 tests réussis, 0 échec).

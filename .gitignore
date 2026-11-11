@@ -4,6 +4,8 @@ target/
 
 # Maven Wrapper & IntelliJ
 .mvn/
+mvnw
+mvnw.cmd
 .idea/
 .idea/modules.xml
 .idea/jarRepositories.xml
