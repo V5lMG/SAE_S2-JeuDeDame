@@ -1,3 +1,0 @@
-Manifest-Version: 1.0
-Main-Class: fr.iutrodez.jeudedame.Jeu
-Class-Path: bootstrapfx-core-0.4.0.jar javafx-base-22-ea+11-win.jar javafx-controls-22-ea+11-win.jar javafx-fxml-22-ea+11-win.jar javafx-graphics-22-ea+11-win.jar javafx-graphics-22-ea+11.jar
